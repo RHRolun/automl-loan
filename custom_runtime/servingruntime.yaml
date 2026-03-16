@@ -1,0 +1,22 @@
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: autogluon-tabular
+spec:
+  supportedModelFormats:
+    - name: autogluon
+      version: "1"
+      autoSelect: true
+  protocolVersions:
+    - v2
+  multiModel: false
+  containers:
+    - name: kserve-container
+      image: quay.io/rlundber/autogluon-runtime:1.0
+      args:
+        - --model_name={{.Name}}
+        - --model_dir=/mnt/models
+        - --http_port=8080
+      ports:
+        - containerPort: 8080
+          protocol: TCP

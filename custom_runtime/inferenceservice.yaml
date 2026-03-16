@@ -1,0 +1,15 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: loan-predictor
+  annotations:
+    serving.knative.openshift.io/enablePassthrough: "true"
+    sidecar.istio.io/inject: "true"
+    sidecar.istio.io/rewriteAppHTTPProbers: "true"
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: autogluon
+      runtime: autogluon-tabular
+      storageUri: <your-model-uri>
