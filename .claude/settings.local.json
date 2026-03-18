@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /mnt/c/Users/lundb/Documents/RedHat_Job/AutoML-loan -type f \\\\\\( -name \"*kserve*\" -o -name \"*deploy*\" -o -name \"*KServe*\" \\\\\\) 2>/dev/null | head -20)",
+      "WebFetch(domain:kserve.github.io)",
+      "WebSearch"
+    ]
+  }
+}

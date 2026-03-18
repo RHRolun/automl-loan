@@ -1,0 +1,19 @@
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: loan-model-pipeline-
+spec:
+  pipelineRef:
+    name: loan-model-pipeline
+  workspaces:
+    - name: ws
+      persistentVolumeClaim:
+        claimName: loan-pipeline-ws
+  params:
+    - name: s3-bucket
+      value: data
+    - name: s3-file-key
+      value: cleaned_loan_data.csv
+    - name: namespace
+      value: automl
