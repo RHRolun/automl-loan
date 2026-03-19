@@ -1,0 +1,137 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: my-workbench
+  namespace: {{ .Release.Namespace }}
+  labels:
+    opendatahub.io/dashboard: "true"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-workbench-storage
+  namespace: {{ .Release.Namespace }}
+  labels:
+    opendatahub.io/dashboard: "true"
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: kubeflow.org/v1
+kind: Notebook
+metadata:
+  name: my-workbench
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    notebooks.opendatahub.io/inject-auth: "true"
+    notebooks.opendatahub.io/last-image-selection: {{ base .Values.workbenchImage | quote }}
+    openshift.io/display-name: My Workbench
+  labels:
+    app: my-workbench
+    opendatahub.io/dashboard: "true"
+    opendatahub.io/odh-managed: "true"
+spec:
+  template:
+    spec:
+      serviceAccountName: my-workbench
+      enableServiceLinks: false
+      containers:
+        - name: my-workbench
+          image: {{ .Values.workbenchImage | quote }}
+          imagePullPolicy: Always
+          workingDir: /opt/app-root/src
+          ports:
+            - containerPort: 8888
+              name: notebook-port
+              protocol: TCP
+          env:
+            - name: NOTEBOOK_ARGS
+              value: |-
+                --ServerApp.port=8888
+                                  --ServerApp.token=''
+                                  --ServerApp.password=''
+                                  --ServerApp.base_url=/notebook/{{ .Release.Namespace }}/my-workbench
+                                  --ServerApp.quit_button=False
+            - name: JUPYTER_IMAGE
+              value: {{ .Values.workbenchImage | quote }}
+          envFrom:
+            - secretRef:
+                name: pipeline
+          resources:
+            limits:
+              cpu: "2"
+              memory: 8Gi
+            requests:
+              cpu: "2"
+              memory: 8Gi
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /notebook/{{ .Release.Namespace }}/my-workbench/api
+              port: notebook-port
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 1
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /notebook/{{ .Release.Namespace }}/my-workbench/api
+              port: notebook-port
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 1
+          volumeMounts:
+            - mountPath: /opt/app-root/src/
+              name: my-workbench-storage
+            - mountPath: /dev/shm
+              name: shm
+      volumes:
+        - name: my-workbench-storage
+          persistentVolumeClaim:
+            claimName: my-workbench-storage
+        - name: shm
+          emptyDir:
+            medium: Memory
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clone-repo
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      serviceAccountName: pipeline
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-workbench
+          image: image-registry.openshift-image-registry.svc:5000/openshift/tools:latest
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, -ec]
+          args:
+            - |
+              echo "Waiting for workbench pod to be ready..."
+              oc wait pod -l app=my-workbench -n {{ .Release.Namespace }} \
+                --for=condition=Ready --timeout=300s
+      containers:
+        - name: git-clone
+          image: image-registry.openshift-image-registry.svc:5000/openshift/tools:latest
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, -ec]
+          args:
+            - |
+              pod=$(oc get pods -n {{ .Release.Namespace }} -l app=my-workbench \
+                -o jsonpath='{.items[0].metadata.name}')
+              oc exec $pod -n {{ .Release.Namespace }} -- \
+                git clone https://github.com/RHRolun/automl-loan
