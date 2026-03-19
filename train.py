@@ -1,3 +1,4 @@
+# %% Imports
 import argparse
 import json
 import os
@@ -7,6 +8,7 @@ import pandas as pd
 from autogluon.tabular import TabularPredictor
 from sklearn.model_selection import train_test_split
 
+# %% Config
 LABEL = "loan_approved"
 TOP_N = 3
 
@@ -15,11 +17,11 @@ parser.add_argument("--data-path", required=True)
 parser.add_argument("--output-dir", required=True)
 args = parser.parse_args()
 
-# Load & split
+# %% Load & split
 df = pd.read_csv(args.data_path)
 train_df, test_df = train_test_split(df, test_size=0.2, stratify=df[LABEL], random_state=42)
 
-# Train
+# %% Train
 predictor = TabularPredictor(
     label=LABEL,
     problem_type="binary",
@@ -36,12 +38,12 @@ predictor = TabularPredictor(
     excluded_model_types=["XGB"],
 )
 
-# Pick top N models
+# %% Leaderboard — pick top N models
 leaderboard = predictor.leaderboard(test_df)
 top_models = leaderboard.head(TOP_N)["model"].tolist()
 print("Top models:", top_models)
 
-# Refit each on full data
+# %% Refit each top model on full data
 for model_name in top_models:
     full = model_name + "_FULL"
     out = Path(args.output_dir) / full
@@ -55,7 +57,7 @@ for model_name in top_models:
     (out / "metrics" / "metrics.json").write_text(json.dumps(metrics))
     print(f"  {full}: {metrics}")
 
-# Clone best model for deployment
+# %% Clone best model for deployment
 best = max(
     top_models,
     key=lambda m: json.loads(
