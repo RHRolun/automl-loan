@@ -1,0 +1,4 @@
+apiVersion: v2
+name: loan-automl
+description: MinIO storage + Tekton pipeline for AutoML loan model training
+version: 0.1.0

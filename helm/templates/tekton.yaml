@@ -1,0 +1,283 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loan-pipeline-ws
+  namespace: {{ .Release.Namespace }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pipeline-admin
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+  - kind: ServiceAccount
+    name: pipeline
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: loan-model-pipeline
+  namespace: {{ .Release.Namespace }}
+spec:
+  params:
+    - name: s3-bucket
+      default: data
+    - name: s3-file-key
+      default: {{ if .Values.dataUrl }}{{ base .Values.dataUrl }}{{ else }}cleaned_loan_data.csv{{ end }}
+    - name: namespace
+      default: {{ .Release.Namespace }}
+
+  workspaces:
+    - name: ws
+
+  tasks:
+    # ------------------------------------------------------------------ #
+    # 1. Fetch data from S3 and generate a short timestamp for this run   #
+    # ------------------------------------------------------------------ #
+    - name: fetch-data
+      workspaces:
+        - {name: ws, workspace: ws}
+      params:
+        - {name: s3-bucket, value: $(params.s3-bucket)}
+        - {name: s3-file-key, value: $(params.s3-file-key)}
+      taskSpec:
+        params:
+          - name: s3-bucket
+          - name: s3-file-key
+        results:
+          - name: timestamp
+        workspaces:
+          - name: ws
+        steps:
+          - name: fetch
+            image: amazon/aws-cli
+            env:
+              - name: AWS_ACCESS_KEY_ID
+                valueFrom:
+                  secretKeyRef: {name: pipeline, key: AWS_ACCESS_KEY_ID}
+              - name: AWS_SECRET_ACCESS_KEY
+                valueFrom:
+                  secretKeyRef: {name: pipeline, key: AWS_SECRET_ACCESS_KEY}
+              - name: AWS_S3_ENDPOINT
+                valueFrom:
+                  secretKeyRef: {name: pipeline, key: AWS_S3_ENDPOINT}
+              - name: AWS_DEFAULT_REGION
+                valueFrom:
+                  secretKeyRef: {name: pipeline, key: AWS_DEFAULT_REGION}
+            script: |
+              #!/usr/bin/env bash
+              printf "%s" `date +%m%d%H%M` > $(results.timestamp.path)
+              mkdir -p $(workspaces.ws.path)/data
+              aws s3 cp s3://$(params.s3-bucket)/$(params.s3-file-key) \
+                $(workspaces.ws.path)/data/data.csv \
+                --endpoint-url $AWS_S3_ENDPOINT
+
+    # ------------------------------------------------------------------ #
+    # 2. Train with AutoGluon and save deployment clone to the PV         #
+    # ------------------------------------------------------------------ #
+    - name: train
+      runAfter: [fetch-data]
+      workspaces:
+        - {name: ws, workspace: ws}
+      params:
+        - {name: timestamp, value: $(tasks.fetch-data.results.timestamp)}
+      taskSpec:
+        params:
+          - name: timestamp
+        workspaces:
+          - name: ws
+        steps:
+          - name: train
+            image: python:3.12
+            script: |
+              #!/usr/bin/env bash
+              pip install -q autogluon.tabular catboost fastai lightgbm torch xgboost
+
+              cat > /tmp/train.py << 'PYEOF'
+              import argparse, json
+              from pathlib import Path
+              import pandas as pd
+              from autogluon.tabular import TabularPredictor
+              from sklearn.model_selection import train_test_split
+
+              LABEL, TOP_N = "loan_approved", 3
+              parser = argparse.ArgumentParser()
+              parser.add_argument("--data-path", required=True)
+              parser.add_argument("--output-dir", required=True)
+              args = parser.parse_args()
+
+              df = pd.read_csv(args.data_path)
+              train_df, test_df = train_test_split(df, test_size=0.2, stratify=df[LABEL], random_state=42)
+
+              predictor = TabularPredictor(
+                  label=LABEL, problem_type="binary", eval_metric="accuracy",
+                  path=f"{args.output_dir}/predictor",
+              ).fit(train_data=train_df, num_stack_levels=3, num_bag_folds=2,
+                    use_bag_holdout=True, holdout_frac=0.2, time_limit=3600, presets="medium_quality",
+                    excluded_model_types=["XGB"])
+
+              top_models = predictor.leaderboard(test_df).head(TOP_N)["model"].tolist()
+              for model_name in top_models:
+                  full = model_name + "_FULL"
+                  out = Path(args.output_dir) / full
+                  clone = predictor.clone(path=out / "predictor", return_clone=True, dirs_exist_ok=True)
+                  clone.delete_models(models_to_keep=[model_name])
+                  clone.refit_full(model=model_name)
+                  clone.set_model_best(model=full, save_trainer=True)
+                  clone.save_space()
+                  metrics = clone.evaluate(test_df)
+                  (out / "metrics").mkdir(parents=True, exist_ok=True)
+                  (out / "metrics" / "metrics.json").write_text(json.dumps(metrics))
+
+              best = max(top_models, key=lambda m: json.loads(
+                  (Path(args.output_dir) / (m + "_FULL") / "metrics" / "metrics.json").read_text()
+              )["accuracy"])
+              print(f"Best: {best}_FULL")
+              TabularPredictor.load(str(Path(args.output_dir) / (best + "_FULL") / "predictor"))\
+                  .clone_for_deployment(path=f"{args.output_dir}/deployment_predictor")
+              PYEOF
+
+              python3 /tmp/train.py \
+                --data-path $(workspaces.ws.path)/data/data.csv \
+                --output-dir $(workspaces.ws.path)/model/$(params.timestamp)
+
+    # ------------------------------------------------------------------ #
+    # 3. Push deployment clone to the OCI image registry as a modelcar    #
+    # ------------------------------------------------------------------ #
+    - name: push-model
+      runAfter: [train]
+      workspaces:
+        - {name: ws, workspace: ws}
+      params:
+        - {name: timestamp, value: $(tasks.fetch-data.results.timestamp)}
+        - {name: namespace, value: $(params.namespace)}
+      taskSpec:
+        params:
+          - name: timestamp
+          - name: namespace
+        results:
+          - name: oci-ref
+        workspaces:
+          - name: ws
+        steps:
+          - name: push
+            image: quay.io/openshift/origin-cli:latest
+            script: |
+              #!/usr/bin/env bash
+              MODEL_NAME="loan-$(params.timestamp)"
+              NAMESPACE="$(params.namespace)"
+              BUILD_DIR="$(workspaces.ws.path)/model/$(params.timestamp)/deployment_predictor"
+
+              cat > $BUILD_DIR/Dockerfile << 'EOF'
+              FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
+              WORKDIR /models
+              COPY . .
+              USER 1001
+              EOF
+
+              oc new-build --binary --name=$MODEL_NAME -n $NAMESPACE --strategy=docker || true
+              oc start-build $MODEL_NAME -n $NAMESPACE --from-dir=$BUILD_DIR --follow --wait
+              oc tag $MODEL_NAME:latest $MODEL_NAME:$(params.timestamp) -n $NAMESPACE
+
+              OCI_REF="image-registry.openshift-image-registry.svc:5000/$NAMESPACE/$MODEL_NAME:$(params.timestamp)"
+              echo -n "$OCI_REF" > $(results.oci-ref.path)
+              echo "Pushed: $OCI_REF"
+
+    # ------------------------------------------------------------------ #
+    # 4. Scan model (placeholder)                                         #
+    # ------------------------------------------------------------------ #
+    - name: scan-model
+      runAfter: [push-model]
+      taskSpec:
+        steps:
+          - name: scan
+            image: registry.access.redhat.com/ubi9/ubi-minimal:9.4
+            script: |-
+              echo "TODO: scan model"
+
+    # ------------------------------------------------------------------ #
+    # 5. Sign model (placeholder)                                         #
+    # ------------------------------------------------------------------ #
+    - name: sign-model
+      runAfter: [scan-model]
+      taskSpec:
+        steps:
+          - name: sign
+            image: registry.access.redhat.com/ubi9/ubi-minimal:9.4
+            script: |-
+              echo "TODO: sign model"
+
+    # ------------------------------------------------------------------ #
+    # 6. Deploy as InferenceService                                       #
+    # ------------------------------------------------------------------ #
+    - name: deploy-model
+      runAfter: [sign-model]
+      params:
+        - {name: timestamp,  value: $(tasks.fetch-data.results.timestamp)}
+        - {name: namespace,  value: $(params.namespace)}
+        - {name: oci-ref,    value: $(tasks.push-model.results.oci-ref)}
+      taskSpec:
+        params:
+          - name: timestamp
+          - name: namespace
+          - name: oci-ref
+        steps:
+          - name: deploy
+            image: quay.io/openshift/origin-cli:latest
+            script: |
+              #!/usr/bin/env bash
+              MODEL_NAME="loan-$(params.timestamp)"
+              NAMESPACE="$(params.namespace)"
+
+              oc apply -n $NAMESPACE -f - << EOF
+              apiVersion: serving.kserve.io/v1alpha1
+              kind: ServingRuntime
+              metadata:
+                name: autogluon-tabular
+              spec:
+                supportedModelFormats:
+                  - name: autogluon
+                    version: "1"
+                    autoSelect: true
+                protocolVersions: [v2]
+                multiModel: false
+                containers:
+                  - name: kserve-container
+                    image: quay.io/rlundber/autogluon-runtime:1.0
+                    args:
+                      - --model_name={{ "{{.Name}}" }}
+                      - --model_dir=/mnt/models
+                      - --http_port=8080
+                    ports:
+                      - containerPort: 8080
+                        protocol: TCP
+              EOF
+
+              oc apply -n $NAMESPACE -f - << EOF
+              apiVersion: serving.kserve.io/v1beta1
+              kind: InferenceService
+              metadata:
+                name: $MODEL_NAME
+                annotations:
+                  serving.knative.openshift.io/enablePassthrough: "true"
+                  sidecar.istio.io/inject: "true"
+                  sidecar.istio.io/rewriteAppHTTPProbers: "true"
+              spec:
+                predictor:
+                  model:
+                    modelFormat:
+                      name: autogluon
+                    runtime: autogluon-tabular
+                    storageUri: oci://$(params.oci-ref)
+              EOF

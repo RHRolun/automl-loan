@@ -1,0 +1,44 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-setup
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: setup
+          image: amazon/aws-cli
+          env:
+            - name: MC_CONFIG_DIR
+              value: /tmp/.mc
+            - name: AWS_ACCESS_KEY_ID
+              value: minio
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minio123
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+          command: [/bin/sh, -c]
+          args:
+            - |
+              echo "Waiting for MinIO..."
+              until aws s3 ls --endpoint-url http://minio-service:9000 > /dev/null 2>&1; do
+                sleep 3
+              done
+
+              aws s3 mb s3://data --endpoint-url http://minio-service:9000 || true
+              echo "Bucket 'data' ready."
+
+              {{- if .Values.dataUrl }}
+              echo "Downloading data from {{ .Values.dataUrl }}..."
+              curl -fsSL -o /tmp/{{ base .Values.dataUrl }} "{{ .Values.dataUrl }}"
+              aws s3 cp /tmp/{{ base .Values.dataUrl }} s3://data/{{ base .Values.dataUrl }} \
+                --endpoint-url http://minio-service:9000
+              echo "Uploaded {{ base .Values.dataUrl }} to bucket."
+              {{- end }}

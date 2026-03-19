@@ -1,0 +1,21 @@
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: loan-model-pipeline-run
+  namespace: {{ .Release.Namespace }}
+spec:
+  status: PipelineRunPending
+  pipelineRef:
+    name: loan-model-pipeline
+  params:
+    - name: s3-bucket
+      value: data
+    - name: s3-file-key
+      value: {{ if .Values.dataUrl }}{{ base .Values.dataUrl }}{{ else }}cleaned_loan_data.csv{{ end }}
+    - name: namespace
+      value: {{ .Release.Namespace }}
+  workspaces:
+    - name: ws
+      persistentVolumeClaim:
+        claimName: loan-pipeline-ws
