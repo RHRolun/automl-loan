@@ -34,7 +34,7 @@ helm install automl ./helm -n automl --create-namespace \
 
 ### Pipeline steps
 
-`fetch-data` → `train` → `push-model` → `scan` (stub) → `sign` (stub) → `deploy-model`
+`fetch-data` → `train` → `push-model` → `scan` → `sign` → `deploy-model`
 
 Each run trains an AutoGluon TabularPredictor, packages the best model as an OCI modelcar, and deploys it as a KServe `InferenceService` named `loan-<timestamp>`.
 
