@@ -33,7 +33,7 @@ Each run trains an AutoGluon TabularPredictor, packages the best model as an OCI
 
 ## After install
 
-**Explore and experiment** — open the workbench in the RHOAI dashboard and run `train.ipynb` for local training and `test_request.ipynb` to send inference requests to a deployed model.
+**Explore and experiment** — open the workbench in the RHOAI dashboard and run `scripts/train.ipynb` for local training and `scripts/test_request.ipynb` to send inference requests to a deployed model.
 
 **Trigger a pipeline run manually:**
 ```bash

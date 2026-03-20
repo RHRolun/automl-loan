@@ -1,5 +1,5 @@
 # %% Install
-!pip install -r requirements.txt
+!pip install -r scripts/requirements.txt
 
 # %% Imports
 import json
@@ -12,7 +12,7 @@ from sklearn.model_selection import train_test_split
 # %% Config
 LABEL = "loan_approved"
 TOP_N = 3
-DATA_PATH = "cleaned_loan_data.csv"
+DATA_PATH = "data/cleaned_loan_data.csv"
 OUTPUT_DIR = "model"
 
 # %% Load & split
