@@ -245,6 +245,10 @@ spec:
               kind: ServingRuntime
               metadata:
                 name: autogluon-tabular
+                annotations:
+                  opendatahub.io/serving-runtime-scope: global
+                  opendatahub.io/template-display-name: autogluon-tabular
+                  openshift.io/display-name: autogluon-tabular
               spec:
                 supportedModelFormats:
                   - name: autogluon
@@ -256,7 +260,7 @@ spec:
                   - name: kserve-container
                     image: quay.io/rlundber/autogluon-runtime:1.8
                     args:
-                      - --model_name={{ "{{.Name}}" }}
+                      - '--model_name={{ "{{.Name}}" }}'
                       - --model_dir=/mnt/models
                       - --http_port=8080
                     ports:
@@ -277,14 +281,33 @@ spec:
               metadata:
                 name: $MODEL_NAME
                 annotations:
-                  serving.knative.openshift.io/enablePassthrough: "true"
-                  sidecar.istio.io/inject: "true"
-                  sidecar.istio.io/rewriteAppHTTPProbers: "true"
+                  serving.kserve.io/stop: 'false'
+                  security.opendatahub.io/enable-auth: 'false'
+                  opendatahub.io/hardware-profile-resource-version: '385300'
+                  openshift.io/description: ''
+                  openshift.io/display-name: $MODEL_NAME
+                  serving.kserve.io/deploymentMode: RawDeployment
+                  opendatahub.io/hardware-profile-namespace: redhat-ods-applications
+                  opendatahub.io/hardware-profile-name: cpu-profile
+                  opendatahub.io/model-type: predictive
               spec:
                 predictor:
+                  automountServiceAccountToken: false
+                  deploymentStrategy:
+                    type: RollingUpdate
+                  maxReplicas: 1
+                  minReplicas: 1
                   model:
                     modelFormat:
                       name: autogluon
+                      version: '1'
+                    resources:
+                      limits:
+                        cpu: '2'
+                        memory: 8Gi
+                      requests:
+                        cpu: '2'
+                        memory: 8Gi
                     runtime: autogluon-tabular
                     storageUri: oci://$(params.oci-ref)
               EOF

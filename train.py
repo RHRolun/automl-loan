@@ -1,3 +1,6 @@
+# %% Install
+!pip install -r requirements.txt
+
 # %% Imports
 import argparse
 import json

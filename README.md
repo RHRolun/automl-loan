@@ -20,8 +20,7 @@ oc patch configs.imageregistry.operator.openshift.io/cluster \
 ## Install
 
 ```bash
-helm install automl ./helm -n automl --create-namespace \
-  --set dataUrl=https://raw.githubusercontent.com/RHRolun/automl-loan/main/cleaned_loan_data.csv
+helm install automl ./helm -n automl --create-namespace --set schedule="0 19 * * *"
 ```
 
 ## What gets deployed
