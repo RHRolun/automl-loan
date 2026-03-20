@@ -14,7 +14,7 @@ Automated model training and deployment pipeline for a loan approval classifier 
 ## Install
 
 ```bash
-helm install automl ./helm -n <YOUR_NAMESPACE> --set schedule="0 19 * * *"
+helm install automl ./helm -n <YOUR_NAMESPACE> --set schedule="0 19 * * *" # Train a new model every day at 7pm
 ```
 
 ## What gets deployed
