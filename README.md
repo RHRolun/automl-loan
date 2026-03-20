@@ -8,19 +8,13 @@ Automated model training and deployment pipeline for a loan approval classifier 
   - **OpenShift Pipelines** operator installed
   - **RHOAI 3.3 or later** operator installed
     - **KServe** enabled in RHOAI
-- `oc` CLI, logged in with **cluster-admin**
+- `oc` CLI
 - Helm 3
-
-Enable the internal image registry's external route (required for pushing out modelcar):
-```bash
-oc patch configs.imageregistry.operator.openshift.io/cluster \
-  --patch '{"spec":{"defaultRoute":true}}' --type=merge
-```
 
 ## Install
 
 ```bash
-helm install automl ./helm -n automl --create-namespace --set schedule="0 19 * * *"
+helm install automl ./helm -n <YOUR_NAMESPACE> --set schedule="0 19 * * *"
 ```
 
 ## What gets deployed
@@ -43,7 +37,7 @@ Each run trains an AutoGluon TabularPredictor, packages the best model as an OCI
 
 **Trigger a pipeline run manually:**
 ```bash
-oc create -f tekton/run.yaml -n automl
+oc create -f run.yaml -n <YOUR_NAMESPACE>
 ```
 
 **Change the schedule** (default: daily at 7pm):

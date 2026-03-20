@@ -2,9 +2,7 @@
 !pip install -r requirements.txt
 
 # %% Imports
-import argparse
 import json
-import os
 from pathlib import Path
 
 import pandas as pd
@@ -14,14 +12,11 @@ from sklearn.model_selection import train_test_split
 # %% Config
 LABEL = "loan_approved"
 TOP_N = 3
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--data-path", required=True)
-parser.add_argument("--output-dir", required=True)
-args = parser.parse_args()
+DATA_PATH = "cleaned_loan_data.csv"
+OUTPUT_DIR = "model"
 
 # %% Load & split
-df = pd.read_csv(args.data_path)
+df = pd.read_csv(DATA_PATH)
 train_df, test_df = train_test_split(df, test_size=0.2, stratify=df[LABEL], random_state=42)
 
 # %% Train
@@ -29,7 +24,7 @@ predictor = TabularPredictor(
     label=LABEL,
     problem_type="binary",
     eval_metric="accuracy",
-    path=f"{args.output_dir}/predictor",
+    path=f"{OUTPUT_DIR}/predictor",
 ).fit(
     train_data=train_df,
     num_stack_levels=3,
@@ -49,7 +44,7 @@ print("Top models:", top_models)
 # %% Refit each top model on full data
 for model_name in top_models:
     full = model_name + "_FULL"
-    out = Path(args.output_dir) / full
+    out = Path(OUTPUT_DIR) / full
     clone = predictor.clone(path=out / "predictor", return_clone=True, dirs_exist_ok=True)
     clone.delete_models(models_to_keep=[model_name])
     clone.refit_full(model=model_name)
@@ -64,11 +59,11 @@ for model_name in top_models:
 best = max(
     top_models,
     key=lambda m: json.loads(
-        (Path(args.output_dir) / (m + "_FULL") / "metrics" / "metrics.json").read_text()
+        (Path(OUTPUT_DIR) / (m + "_FULL") / "metrics" / "metrics.json").read_text()
     )["accuracy"],
 )
 print(f"Best model: {best}_FULL")
-TabularPredictor.load(str(Path(args.output_dir) / (best + "_FULL") / "predictor")).clone_for_deployment(
-    path=f"{args.output_dir}/deployment_predictor"
+TabularPredictor.load(str(Path(OUTPUT_DIR) / (best + "_FULL") / "predictor")).clone_for_deployment(
+    path=f"{OUTPUT_DIR}/deployment_predictor"
 )
-print(f"Deployment clone saved to: {args.output_dir}/deployment_predictor")
+print(f"Deployment clone saved to: {OUTPUT_DIR}/deployment_predictor")
