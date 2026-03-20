@@ -29,7 +29,7 @@ metadata:
     notebooks.opendatahub.io/inject-auth: "true"
     notebooks.opendatahub.io/last-image-selection: {{ base .Values.workbenchImage | quote }}
     openshift.io/display-name: My Workbench
-    opendatahub.io/image-display-name: Code Server | Data Science | CPU | Python 3.12
+    opendatahub.io/image-display-name: Code Server AutoML
     notebooks.opendatahub.io/last-image-selection: 'codeserver-33:v3.3'
     opendatahub.io/hardware-profile-name: cpu-profile
     opendatahub.io/hardware-profile-resource-version: '385300'

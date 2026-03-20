@@ -13,7 +13,7 @@ from sklearn.model_selection import train_test_split
 LABEL = "loan_approved"
 TOP_N = 3
 DATA_PATH = "../data/cleaned_loan_data.csv"
-OUTPUT_DIR = "model"
+OUTPUT_DIR = "models"
 
 # %% Load & split
 df = pd.read_csv(DATA_PATH)
@@ -64,6 +64,6 @@ best = max(
 )
 print(f"Best model: {best}_FULL")
 TabularPredictor.load(str(Path(OUTPUT_DIR) / (best + "_FULL") / "predictor")).clone_for_deployment(
-    path=f"{OUTPUT_DIR}/deployment_predictor"
+    path="best_model"
 )
-print(f"Deployment clone saved to: {OUTPUT_DIR}/deployment_predictor")
+print(f"Deployment clone saved to: {OUTPUT_DIR}/best_model")
