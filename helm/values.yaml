@@ -1,3 +1,5 @@
 dataUrl: "https://raw.githubusercontent.com/RHRolun/automl-loan/main/data/cleaned_loan_data.csv"
 schedule: "0 19 * * *"
 workbenchImage: "registry.redhat.io/rhoai/odh-workbench-codeserver-datascience-cpu-py312-rhel9:v3.3"
+modelName: "tmp-model-before-first-is-deployed"
+mcpImage: "quay.io/rlundber/loan-mcp:0.0.1"

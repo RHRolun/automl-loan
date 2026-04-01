@@ -44,3 +44,34 @@ oc create -f run.yaml -n <YOUR_NAMESPACE>
 ```bash
 helm upgrade automl ./helm -n automl --set schedule="0 6 * * 1"  # Mondays at 6am
 ```
+
+## MCP Server
+
+An MCP server is provided in `mcp/` to expose the deployed model as a tool for Claude.
+
+```bash
+pip install -r mcp/requirements.txt
+INFER_ENDPOINT=https://<YOUR-MODEL-ROUTE> MODEL_NAME=<YOUR-MODEL-NAME> python mcp/server.py
+```
+
+Find the values in the RHOAI dashboard under **Deployments**, or via:
+```bash
+oc get inferenceservice -n <YOUR_NAMESPACE>
+oc get route -n <YOUR_NAMESPACE> -l serving.kserve.io/inferenceservice=<MODEL-NAME>
+```
+
+To use with Claude Desktop, add to `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "loan-approval": {
+      "command": "python",
+      "args": ["mcp/server.py"],
+      "env": {
+        "INFER_ENDPOINT": "https://<YOUR-MODEL-ROUTE>",
+        "MODEL_NAME": "<YOUR-MODEL-NAME>"
+      }
+    }
+  }
+}
+```
